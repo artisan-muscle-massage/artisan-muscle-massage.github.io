@@ -1,0 +1,196 @@
+<!doctype html>
+<html lang="zh-Hant">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>人匠｜線上登記</title>
+<script charset="utf-8" src="https://static.line-scdn.net/liff/edge/2/sdk.js"></script>
+<style>
+  :root { --gold: #C9A227; --ink: #1d1d1f; --muted: #6e6e73; --line: #e3e3e6; --bg: #f6f5f1; --accent: #E07B39; }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--ink);
+         font-family: -apple-system, "PingFang TC", "Noto Sans TC", "Microsoft JhengHei", sans-serif; }
+  header { background: #111; color: #fff; padding: 18px 20px 16px; }
+  header .brand { color: var(--gold); font-size: 13px; letter-spacing: .1em; }
+  header h1 { margin: 4px 0 0; font-size: 22px; }
+  main { padding: 16px 16px 120px; max-width: 560px; margin: 0 auto; }
+  .intro { background: #fff; border-radius: 12px; padding: 14px 16px; font-size: 14px; line-height: 1.7; color: #444; white-space: pre-line; }
+  .field { background: #fff; border-radius: 12px; padding: 14px 16px; margin-top: 12px; }
+  .field > label, .field > .label { display: block; font-weight: 600; font-size: 15px; margin-bottom: 8px; }
+  .req { color: var(--accent); margin-left: 4px; }
+  input[type=text], input[type=tel], input[type=date], select, textarea {
+    width: 100%; font-size: 16px; padding: 11px 12px; border: 1px solid var(--line); border-radius: 8px;
+    background: #fafafa; color: var(--ink); font-family: inherit; -webkit-appearance: none; appearance: none; }
+  select { background-image: linear-gradient(45deg, transparent 50%, #888 50%), linear-gradient(135deg, #888 50%, transparent 50%);
+           background-position: calc(100% - 18px) 50%, calc(100% - 13px) 50%; background-size: 5px 5px; background-repeat: no-repeat; }
+  textarea { min-height: 88px; resize: vertical; }
+  .chips { display: flex; flex-wrap: wrap; gap: 8px; }
+  .chips label { position: relative; }
+  .chips input { position: absolute; opacity: 0; pointer-events: none; }
+  .chips span { display: inline-block; padding: 9px 14px; border: 1px solid var(--line); border-radius: 999px;
+                font-size: 15px; background: #fafafa; }
+  .chips input:checked + span { background: #111; border-color: #111; color: var(--gold); }
+  .hint { font-size: 12px; color: var(--muted); margin-top: 6px; }
+  .error { color: #c0392b; font-size: 13px; margin-top: 6px; display: none; }
+  .field.invalid .error { display: block; }
+  .field.invalid input, .field.invalid textarea, .field.invalid select { border-color: #c0392b; }
+  .bar { position: fixed; left: 0; right: 0; bottom: 0; background: rgba(246,245,241,.96); padding: 12px 16px calc(12px + env(safe-area-inset-bottom)); border-top: 1px solid var(--line); }
+  .bar button { width: 100%; max-width: 560px; display: block; margin: 0 auto; padding: 14px; font-size: 17px; font-weight: 700;
+                border: 0; border-radius: 10px; background: var(--accent); color: #fff; }
+  .bar button:disabled { opacity: .5; }
+  .center { text-align: center; padding: 60px 20px; color: var(--muted); }
+  .done { font-size: 48px; }
+</style>
+</head>
+<body>
+<header><div class="brand">人匠肌肉按摩專門店</div><h1 id="title">線上登記</h1></header>
+<main id="app"><div class="center">載入中…</div></main>
+<div class="bar" id="bar" style="display:none"><button id="submit">送出</button></div>
+
+<script>
+/* ======================= 設定（只需要改這兩行） ======================= */
+const LIFF_ID = '請貼上 LIFF ID';
+const GAS_URL = '請貼上 Apps Script 部署網址（結尾是 /exec）';
+
+/* ======================= 表單內容（可以自己改選項） =======================
+   type: text 文字 / tel 電話 / date 日期 / select 下拉選單 / chips 可複選按鈕 / textarea 多行文字 */
+const FORMS = {
+  waitlist: {
+    title: '候補登記', sheet: '候補',
+    intro: '請填寫您方便的時間，\n有適合的空檔，我們會馬上通知您！',
+    fields: [
+      { key: 'name',  label: '姓名', type: 'text', required: true, remember: true },
+      { key: 'phone', label: '電話', type: 'tel',  required: true, remember: true },
+      { key: 'days',  label: '方便的星期（可複選）', type: 'chips', required: true,
+        options: ['週一', '週三', '週四', '週五', '週六', '週日'] },
+      { key: 'times', label: '方便的時段（可複選）', type: 'chips', required: true,
+        options: ['上午 10:00–12:00', '下午 12:00–17:00', '晚上 17:00–21:00'] },
+      { key: 'date',  label: '特別想約的日期', type: 'date', hint: '選填，沒有特定日期可以不填' },
+      { key: 'condition', label: '請描述您的狀況', type: 'textarea', required: true,
+        placeholder: '例如：右肩舉不起來約兩個月、久坐腰痠…' },
+      { key: 'note',  label: '特殊狀況備註', type: 'textarea', placeholder: '選填' }
+    ]
+  },
+  urgent: {
+    title: '急件登記', sheet: '急件',
+    intro: '🔥 急件加開時段\n週一、三、四、五：9:00／13:00／16:00／21:00\n週六：13:00 後（週二公休）\n\n收到後我們會火速為您安排！',
+    fields: [
+      { key: 'name',  label: '姓名', type: 'text', required: true, remember: true },
+      { key: 'phone', label: '電話', type: 'tel',  required: true, remember: true },
+      { key: 'date',  label: '希望日期', type: 'date', required: true },
+      { key: 'slot',  label: '希望時段', type: 'select', required: true,
+        options: ['9:00', '13:00', '16:00', '21:00', '週六 13:00 後'] },
+      { key: 'condition', label: '狀況備註', type: 'textarea', required: true,
+        placeholder: '請簡單描述目前的狀況' }
+    ]
+  }
+};
+/* ====================================================================== */
+
+const $ = (s, el = document) => el.querySelector(s);
+const esc = (s) => String(s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+const store = {
+  get(k) { try { return localStorage.getItem('rj_' + k) || ''; } catch (e) { return ''; } },
+  set(k, v) { try { localStorage.setItem('rj_' + k, v); } catch (e) {} }
+};
+
+function today() {
+  const d = new Date(); d.setMinutes(d.getMinutes() - d.getTimezoneOffset());
+  return d.toISOString().slice(0, 10);
+}
+
+function renderField(f) {
+  const req = f.required ? '<span class="req">*</span>' : '';
+  const ph = f.placeholder ? ` placeholder="${esc(f.placeholder)}"` : '';
+  const val = f.remember ? esc(store.get(f.key)) : '';
+  let input = '';
+  if (f.type === 'textarea') input = `<textarea id="f_${f.key}"${ph}></textarea>`;
+  else if (f.type === 'select') input = `<select id="f_${f.key}"><option value="">請選擇</option>${f.options.map(o => `<option>${esc(o)}</option>`).join('')}</select>`;
+  else if (f.type === 'chips') input = `<div class="chips">${f.options.map(o => `<label><input type="checkbox" name="f_${f.key}" value="${esc(o)}"><span>${esc(o)}</span></label>`).join('')}</div>`;
+  else if (f.type === 'date') input = `<input type="date" id="f_${f.key}" min="${today()}">`;
+  else if (f.type === 'tel') input = `<input type="tel" id="f_${f.key}" inputmode="tel" autocomplete="tel" value="${val}" placeholder="例如 0912345678">`;
+  else input = `<input type="text" id="f_${f.key}" value="${val}"${ph}>`;
+  const tag = f.type === 'chips' ? 'div' : 'label';
+  const forAttr = f.type === 'chips' ? '' : ` for="f_${f.key}"`;
+  return `<div class="field" data-key="${f.key}"><${tag} class="label"${forAttr}>${esc(f.label)}${req}</${tag}>${input}
+    ${f.hint ? `<div class="hint">${esc(f.hint)}</div>` : ''}<div class="error">${f.type === 'tel' ? '請填寫正確的電話號碼' : '這一題必填喔'}</div></div>`;
+}
+
+function readValue(f) {
+  if (f.type === 'chips') return [...document.querySelectorAll(`input[name="f_${f.key}"]:checked`)].map(i => i.value).join('、');
+  return ($('#f_' + f.key).value || '').trim();
+}
+
+function validate(form) {
+  let ok = true, first = null;
+  form.fields.forEach(f => {
+    const v = readValue(f);
+    let bad = Boolean(f.required) && !v;
+    if (!bad && f.type === 'tel' && v && v.replace(/\D/g, '').length < 8) bad = true;
+    const el = $(`.field[data-key="${f.key}"]`);
+    el.classList.toggle('invalid', bad);
+    if (bad && !first) first = el;
+    ok = ok && !bad;
+  });
+  if (first) first.scrollIntoView({ behavior: 'smooth', block: 'center' });
+  return ok;
+}
+
+function showMessage(html) {
+  $('#app').innerHTML = `<div class="center">${html}</div>`;
+  $('#bar').style.display = 'none';
+}
+
+async function main() {
+  try {
+    await liff.init({ liffId: LIFF_ID });
+  } catch (e) {
+    return showMessage('表單載入失敗，請稍後再試<br><small>' + esc(e.message || e) + '</small>');
+  }
+  if (!liff.isLoggedIn()) { liff.login({ redirectUri: location.href }); return; }
+
+  // 要在 liff.init 之後才讀網址參數（LIFF 會先把 ?form=... 包在 liff.state 裡）
+  const formKey = new URLSearchParams(location.search).get('form') || 'waitlist';
+  const form = FORMS[formKey];
+  if (!form) return showMessage('找不到這份表單');
+
+  document.title = '人匠｜' + form.title;
+  $('#title').textContent = form.title;
+
+  $('#app').innerHTML = `<div class="intro">${esc(form.intro)}</div>` + form.fields.map(renderField).join('');
+  $('#bar').style.display = 'block';
+
+  $('#submit').addEventListener('click', async () => {
+    if (!validate(form)) return;
+    const btn = $('#submit');
+    btn.disabled = true; btn.textContent = '送出中…';
+
+    const fields = form.fields.map(f => ({ label: f.label.replace(/（.*?）/g, ''), value: readValue(f) }));
+    form.fields.forEach(f => { if (f.remember) store.set(f.key, readValue(f)); });
+
+    try {
+      const res = await fetch(GAS_URL, {
+        method: 'POST',
+        body: JSON.stringify({ formType: form.sheet, idToken: liff.getIDToken(), fields })
+      });
+      const result = await res.json();
+      if (!result.ok) throw new Error(result.error || '送出失敗');
+    } catch (e) {
+      btn.disabled = false; btn.textContent = '送出';
+      alert('送出失敗，請再試一次。\n' + (e.message || ''));
+      return;
+    }
+
+    // 在聊天室留下一則紀錄（含「姓名：」，機器人不會自動回覆）
+    const summary = `✅ 已送出${form.title}\n` + fields.filter(f => f.value).map(f => `${f.label}：${f.value}`).join('\n');
+    try { if (liff.isInClient()) await liff.sendMessages([{ type: 'text', text: summary.slice(0, 4900) }]); } catch (e) {}
+
+    showMessage('<div class="done">✅</div><p>已收到您的' + esc(form.title) + '！<br>我們會盡快與您聯繫。</p>');
+    setTimeout(() => { if (liff.isInClient()) liff.closeWindow(); }, 1500);
+  });
+}
+
+main();
+</script>
+</body>
+</html>
